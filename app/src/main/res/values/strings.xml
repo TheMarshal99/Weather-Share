@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">Weather Share</string>
+    <string name="title_activity_weather">Map</string>
+    <string name="search">Search</string>
+    <string name="search_hint">Enter a City Name</string>
+    <string name="btn_ok">OK</string>
+    <string name="temperature">%.01f\u00B0 C</string>
+</resources>
