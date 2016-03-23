@@ -12,6 +12,11 @@ public class WeatherResponse {
     @SerializedName("main")
     private TemperatureData mTempData;
 
+    @SerializedName("weather")
+    private WeatherConditionData[] mConditions;
+
+
+
     public String getName() {
         return mName;
     }
@@ -26,5 +31,13 @@ public class WeatherResponse {
 
     public double getLow() {
         return mTempData.getTempMin();
+    }
+
+    public String getConditions() {
+        return mConditions[0].getDescription();
+    }
+
+    public String getWeatherIconUrl() {
+        return mConditions[0].getIconUrl();
     }
 }
