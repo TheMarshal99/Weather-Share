@@ -1,27 +1,44 @@
 package com.branch.marshall.weathershare;
 
-import android.app.Activity;
+import android.Manifest;
 import android.app.AlertDialog;
+import android.app.SearchManager;
+import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.location.Location;
 import android.os.Bundle;
-import android.text.Editable;
-import android.text.TextUtils;
-import android.text.TextWatcher;
+import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
+import android.support.v4.app.ActivityCompat;
+import android.support.v4.view.MenuItemCompat;
+import android.support.v7.app.AppCompatActivity;
+import android.support.v7.widget.SearchView;
+import android.text.InputType;
 import android.util.Log;
+import android.view.Menu;
+import android.view.MenuInflater;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.Button;
-import android.widget.EditText;
-import android.widget.ImageView;
-import android.widget.TextView;
+import android.widget.LinearLayout;
 
 import com.branch.marshall.weathershare.api.ApiClient;
 import com.branch.marshall.weathershare.api.WeatherResponse;
+import com.branch.marshall.weathershare.api.view.TodayWeatherView;
 import com.branch.marshall.weathershare.util.EventManager;
 import com.branch.marshall.weathershare.util.ImageUtils;
 import com.branch.marshall.weathershare.util.events.CityWeatherEvent;
 import com.branch.marshall.weathershare.util.events.ErrorEvent;
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.location.LocationServices;
+import com.google.android.gms.maps.CameraUpdateFactory;
+import com.google.android.gms.maps.GoogleMap;
+import com.google.android.gms.maps.OnMapReadyCallback;
+import com.google.android.gms.maps.SupportMapFragment;
+import com.google.android.gms.maps.model.LatLng;
 import com.squareup.otto.Subscribe;
 
 import java.util.Map;
@@ -30,25 +47,34 @@ import io.branch.indexing.BranchUniversalObject;
 import io.branch.referral.Branch;
 import io.branch.referral.BranchError;
 import io.branch.referral.util.LinkProperties;
+import io.branch.referral.util.ShareSheetStyle;
+
 
 /**
  * Created by marshall on 3/16/16.
  */
-public class WeatherActivity extends Activity {
+public class WeatherActivity extends AppCompatActivity implements OnMapReadyCallback, GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener {
+    private static final String LOG_TAG = "WeatherShare";
+
+    private static void Log(String msg, Object... args) {
+        Log.d(LOG_TAG, String.format(msg, args));
+    }
+
+    private static final String MATCH_COORDINATE_REGEX = "[+-]?[0-9]*\\.?[0-9]+";
     private static final String SHARE_CITY_TODAY_NAME = "today_city_name";
+    private static final String SHARE_CITY_TODAY_LAT = "lat";
+    private static final String SHARE_CITY_TODAY_LON = "lon";
 
-    private EditText mEntry;
+    private GoogleMap mMap;
+    private GoogleApiClient mApiClient;
 
-    private Button mSearch;
+    private LatLng mMyLocation;
+
+    // MC -- 2016-04-22 -- TODO: Move this stuff into a specialized view.
     private Button mShare;
 
-    private ImageView mWeatherImage;
-    private TextView mTemp;
-    private TextView mCity;
-    private TextView mCondition;
-
     private View mLoader;
-    private View mResult;
+    private LinearLayout mResult;
 
     private WeatherResponse mResponse;
 
@@ -57,43 +83,23 @@ public class WeatherActivity extends Activity {
 
         setContentView(R.layout.activity_weather);
 
-        mWeatherImage = (ImageView) findViewById(R.id.weatherImage);
-        mTemp = (TextView) findViewById(R.id.tempDegrees);
-        mCity = (TextView) findViewById(R.id.cityName);
-        mCondition = (TextView) findViewById(R.id.weatherType);
+        if (mApiClient == null) {
+            mApiClient = new GoogleApiClient.Builder(this)
+                    .addConnectionCallbacks(this)
+                    .addOnConnectionFailedListener(this)
+                    .addApi(LocationServices.API)
+                    .build();
+        }
 
-        mSearch = (Button) findViewById(R.id.searchButton);
-        mSearch.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                getCityTemperature(mEntry.getText().toString().trim());
-            }
-        });
+        // Obtain the SupportMapFragment and get notified when the map is ready to be used.
+        SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager().findFragmentById(R.id.map);
+        mapFragment.getMapAsync(this);
 
         mShare = (Button) findViewById(R.id.shareButton);
         mShare.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 shareCityTemperature();
-            }
-        });
-
-        mEntry = (EditText) findViewById(R.id.searchText);
-        mEntry.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
-
-            }
-
-            @Override
-            public void onTextChanged(CharSequence s, int start, int before, int count) {
-
-            }
-
-            @Override
-            public void afterTextChanged(Editable s) {
-                String t = s.toString();
-                mSearch.setEnabled(!TextUtils.isEmpty(t));
             }
         });
 
@@ -106,7 +112,7 @@ public class WeatherActivity extends Activity {
         });
         mLoader.setVisibility(View.GONE);
 
-        mResult = findViewById(R.id.resultLayout);
+        mResult = (LinearLayout) findViewById(R.id.resultLayout);
         mResult.setVisibility(View.GONE);
 
         EventManager.getInstance().registerListener(this);
@@ -114,6 +120,8 @@ public class WeatherActivity extends Activity {
     }
 
     public void onStart() {
+        mApiClient.connect();
+
         super.onStart();
 
         Branch branch = Branch.getInstance();
@@ -125,17 +133,13 @@ public class WeatherActivity extends Activity {
                     if (branchUniversalObject != null) {
                         Map<String, String> data = branchUniversalObject.getMetadata();
 
-                        Log.d("WeatherShare", "Got deeplink!");
-
-                        for (String key : data.keySet()) {
-                            Log.d("WeatherShare", String.format("%s: %s", key, data.get(key)));
-                        }
+                        if (data.containsKey(SHARE_CITY_TODAY_NAME))
+                            getCityTemperature(data.get(SHARE_CITY_TODAY_NAME));
+                        else if (data.containsKey(SHARE_CITY_TODAY_LAT))
+                            getLocationTemperature(Double.valueOf(data.get(SHARE_CITY_TODAY_LAT)), Double.valueOf(data.get(SHARE_CITY_TODAY_LON)));
                     }
-                    // params are the deep linked params associated with the link that the user clicked -> was re-directed to this app
-                    // params will be empty if no data found
-                    // ... insert custom logic here ...
                 } else {
-                    Log.i("MyApp", error.getMessage());
+                    Log(error.getMessage());
                 }
             }
         }, this.getIntent().getData(), this);
@@ -143,6 +147,37 @@ public class WeatherActivity extends Activity {
 
     public void onNewIntent(Intent intent) {
         this.setIntent(intent);
+        handleIntent(intent);
+    }
+
+    public void onStop() {
+        mApiClient.disconnect();
+
+        super.onStop();
+    }
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        MenuInflater inflater = getMenuInflater();
+        inflater.inflate(R.menu.main, menu);
+
+        SearchManager searchManager = (SearchManager) getSystemService(Context.SEARCH_SERVICE);
+        SearchView searchView = (SearchView) MenuItemCompat.getActionView(menu.findItem(R.id.search));
+        searchView.setSearchableInfo(searchManager.getSearchableInfo(getComponentName()));
+        searchView.setIconified(false);
+        searchView.setIconifiedByDefault(false);
+        searchView.setQueryHint(getResources().getString(R.string.search_hint));
+        searchView.setInputType(InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+        MenuItemCompat.expandActionView(menu.findItem(R.id.search));
+
+        return true;
+    }
+
+    private void handleIntent(Intent intent) {
+        if (Intent.ACTION_SEARCH.equals(intent.getAction())) {
+            String query = intent.getStringExtra(SearchManager.QUERY);
+            getCityTemperature(query);
+        }
     }
 
     private void startLoading() {
@@ -161,24 +196,46 @@ public class WeatherActivity extends Activity {
         ApiClient.getInstance().getWeatherForCity(city);
     }
 
+    private void getLocationTemperature(double lat, double lon) {
+        startLoading();
+
+        mResult.setVisibility(View.GONE);
+
+        ApiClient.getInstance().getWeatherForLocation(lat, lon);
+    }
+
     private void shareCityTemperature() {
         BranchUniversalObject obj = new BranchUniversalObject()
-                .addContentMetadata(SHARE_CITY_TODAY_NAME, mResponse.getName());
+                .addContentMetadata(SHARE_CITY_TODAY_LAT, "" + mResponse.getLatitude())
+                .addContentMetadata(SHARE_CITY_TODAY_LON, "" + mResponse.getLongitude());
 
         LinkProperties linkProperties = new LinkProperties()
                 .setChannel("app")
                 .setFeature("sharing");
 
+        ShareSheetStyle style = new ShareSheetStyle(this, getResources().getString(R.string.share_title), getResources().getString(R.string.share_body, mResponse.getName()));
+
         startLoading();
 
-        obj.generateShortUrl(this, linkProperties, new Branch.BranchLinkCreateListener() {
+        obj.showShareSheet(this, linkProperties, style, new Branch.BranchLinkShareListener() {
             @Override
-            public void onLinkCreate(String url, BranchError error) {
-                if (error == null) {
-                    stopLoading();
+            public void onShareLinkDialogLaunched() {
+                stopLoading();
+            }
 
-                    Log.d("MyApp", String.format("Branch Link: %s", url));
-                }
+            @Override
+            public void onShareLinkDialogDismissed() {
+
+            }
+
+            @Override
+            public void onLinkShareResponse(String sharedLink, String sharedChannel, BranchError error) {
+
+            }
+
+            @Override
+            public void onChannelSelected(String channelName) {
+
             }
         });
     }
@@ -189,13 +246,22 @@ public class WeatherActivity extends Activity {
 
         mResult.setVisibility(View.VISIBLE);
 
+        // Clear any existing results.
+        if (mResult.getChildCount() > 1)
+            mResult.removeViewAt(0);
+
         mResponse = event.getResponse();
 
-        mWeatherImage.setImageBitmap(null);
-        ImageUtils.getInstance().loadImage(mResponse.getWeatherIconUrl(), mWeatherImage);
-        mCity.setText(mResponse.getName());
-        mTemp.setText(getResources().getString(R.string.temperature, mResponse.getTemperature()));
-        mCondition.setText(capitalizeSentence(mResponse.getConditions()));
+        TodayWeatherView view = new TodayWeatherView(this);
+
+        view.setWeatherData(mResponse);
+
+        mResult.addView(view, 0);
+
+        if (mMap != null) {
+            mMyLocation = new LatLng(mResponse.getLatitude(), mResponse.getLongitude());
+            mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(mMyLocation, 12));
+        }
     }
 
     @Subscribe
@@ -215,16 +281,65 @@ public class WeatherActivity extends Activity {
         mResult.setVisibility(View.GONE);
     }
 
-    private String capitalizeSentence(String in) {
-        String[] split = in.split("\\s");
-        StringBuilder out = new StringBuilder();
-
-        for (String word : split) {
-            out.append(word.substring(0, 1).toUpperCase());
-            out.append(word.substring(1));
-            out.append(" ");
+    @Override
+    public void onMapReady(GoogleMap googleMap) {
+        mMap = googleMap;
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            // TODO: Consider calling
+            //    ActivityCompat#requestPermissions
+            // here to request the missing permissions, and then overriding
+            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+            //                                          int[] grantResults)
+            // to handle the case where the user grants the permission. See the documentation
+            // for ActivityCompat#requestPermissions for more details.
+            return;
         }
 
-        return out.toString().trim();
+        mMap.setMyLocationEnabled(true);
+        mMap.getMyLocation();
+
+        if (mMyLocation != null)
+            mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(mMyLocation, 12));
+    }
+
+    //////////////////////////////////////////////////////////////
+    // GoogleApiClient.ConnectionCallbacks implementation
+    //////////////////////////////////////////////////////////////
+
+    @Override
+    public void onConnected(@Nullable Bundle bundle) {
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            // TODO: Consider calling
+            //    ActivityCompat#requestPermissions
+            // here to request the missing permissions, and then overriding
+            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+            //                                          int[] grantResults)
+            // to handle the case where the user grants the permission. See the documentation
+            // for ActivityCompat#requestPermissions for more details.
+            return;
+        }
+
+        Location loc = LocationServices.FusedLocationApi.getLastLocation(mApiClient);
+
+        if (loc != null) {
+            mMyLocation = new LatLng(loc.getLatitude(), loc.getLongitude());
+
+            if (mMap != null)
+                mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(mMyLocation, 12));
+        }
+    }
+
+    @Override
+    public void onConnectionSuspended(int i) {
+
+    }
+
+    //////////////////////////////////////////////////////////////
+    // GoogleApiClient.OnConnectionFailedListener implementation
+    //////////////////////////////////////////////////////////////
+
+    @Override
+    public void onConnectionFailed(@NonNull ConnectionResult connectionResult) {
+
     }
 }

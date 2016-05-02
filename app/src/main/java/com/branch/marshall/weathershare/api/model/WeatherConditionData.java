@@ -1,4 +1,4 @@
-package com.branch.marshall.weathershare.api;
+package com.branch.marshall.weathershare.api.model;
 
 import com.google.gson.annotations.SerializedName;
 
