@@ -21,14 +21,20 @@ import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.ToggleButton;
 
 import com.branch.marshall.weathershare.api.ApiClient;
-import com.branch.marshall.weathershare.api.WeatherResponse;
+import com.branch.marshall.weathershare.api.ApiResponse;
+import com.branch.marshall.weathershare.api.CurrentWeatherResponse;
+import com.branch.marshall.weathershare.api.ForecastResponse;
+import com.branch.marshall.weathershare.api.view.ForecastWeatherView;
 import com.branch.marshall.weathershare.api.view.TodayWeatherView;
 import com.branch.marshall.weathershare.util.EventManager;
 import com.branch.marshall.weathershare.util.ImageUtils;
+import com.branch.marshall.weathershare.util.events.CityForecastEvent;
 import com.branch.marshall.weathershare.util.events.CityWeatherEvent;
 import com.branch.marshall.weathershare.util.events.ErrorEvent;
 import com.google.android.gms.common.ConnectionResult;
@@ -64,6 +70,10 @@ public class WeatherActivity extends AppCompatActivity implements OnMapReadyCall
     private static final String SHARE_CITY_TODAY_NAME = "today_city_name";
     private static final String SHARE_CITY_TODAY_LAT = "lat";
     private static final String SHARE_CITY_TODAY_LON = "lon";
+    private static final String SHARE_CITY_MODE = "mode";
+
+    private static final int MODE_CURRENT_WEATHER = 0;
+    private static final int MODE_5_DAY_FORECAST = 1;
 
     private GoogleMap mMap;
     private GoogleApiClient mApiClient;
@@ -75,8 +85,15 @@ public class WeatherActivity extends AppCompatActivity implements OnMapReadyCall
 
     private View mLoader;
     private LinearLayout mResult;
+    private ToggleButton mCurrentButton;
+    private ToggleButton mForecastButton;
 
-    private WeatherResponse mResponse;
+    private int mCurrentMode;
+
+    private String mCurrentCity;
+
+    private CurrentWeatherResponse mCurrentWeatherResponse;
+    private ForecastResponse mForecastResponse;
 
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -102,6 +119,7 @@ public class WeatherActivity extends AppCompatActivity implements OnMapReadyCall
                 shareCityTemperature();
             }
         });
+        mShare.setVisibility(View.GONE);
 
         mLoader = findViewById(R.id.loader);
         mLoader.setOnTouchListener(new View.OnTouchListener() {
@@ -113,7 +131,23 @@ public class WeatherActivity extends AppCompatActivity implements OnMapReadyCall
         mLoader.setVisibility(View.GONE);
 
         mResult = (LinearLayout) findViewById(R.id.resultLayout);
-        mResult.setVisibility(View.GONE);
+
+        mCurrentButton = (ToggleButton) findViewById(R.id.btnCurrent);
+        mCurrentButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                setShowCurrentWeather();
+            }
+        });
+        mCurrentButton.setChecked(true);
+
+        mForecastButton = (ToggleButton) findViewById(R.id.btnForecast);
+        mForecastButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                setShowForecastWeather();
+            }
+        });
 
         EventManager.getInstance().registerListener(this);
         ImageUtils.getInstance().init(this);
@@ -133,10 +167,40 @@ public class WeatherActivity extends AppCompatActivity implements OnMapReadyCall
                     if (branchUniversalObject != null) {
                         Map<String, String> data = branchUniversalObject.getMetadata();
 
-                        if (data.containsKey(SHARE_CITY_TODAY_NAME))
-                            getCityTemperature(data.get(SHARE_CITY_TODAY_NAME));
-                        else if (data.containsKey(SHARE_CITY_TODAY_LAT))
-                            getLocationTemperature(Double.valueOf(data.get(SHARE_CITY_TODAY_LAT)), Double.valueOf(data.get(SHARE_CITY_TODAY_LON)));
+                        if (data.containsKey(SHARE_CITY_MODE)) {
+                            if (Integer.valueOf(data.get(SHARE_CITY_MODE)) == MODE_5_DAY_FORECAST)
+                                setShowForecastWeather();
+                            else if (Integer.valueOf(data.get(SHARE_CITY_MODE)) == MODE_CURRENT_WEATHER)
+                                setShowCurrentWeather();
+                        } else {
+                            setShowCurrentWeather();
+                        }
+
+                        if (data.containsKey(SHARE_CITY_TODAY_NAME)) {
+                            mCurrentCity = data.get(SHARE_CITY_TODAY_NAME);
+
+                            if (MODE_5_DAY_FORECAST == mCurrentMode)
+                                getCityForecast(mCurrentCity);
+                            else
+                                getCityCurrentWeather(mCurrentCity);
+
+                            View view = WeatherActivity.this.getCurrentFocus();
+                            if (view != null) {
+                                InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                                imm.hideSoftInputFromWindow(view.getWindowToken(), 0);
+                            }
+                        } else if (data.containsKey(SHARE_CITY_TODAY_LAT)) {
+                            if (MODE_5_DAY_FORECAST == mCurrentMode)
+                                getLocationForecast(Double.valueOf(data.get(SHARE_CITY_TODAY_LAT)), Double.valueOf(data.get(SHARE_CITY_TODAY_LON)));
+                            else
+                                getLocationCurrentWeather(Double.valueOf(data.get(SHARE_CITY_TODAY_LAT)), Double.valueOf(data.get(SHARE_CITY_TODAY_LON)));
+
+                            View view = WeatherActivity.this.getCurrentFocus();
+                            if (view != null) {
+                                InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                                imm.hideSoftInputFromWindow(view.getWindowToken(), 0);
+                            }
+                        }
                     }
                 } else {
                     Log(error.getMessage());
@@ -176,7 +240,16 @@ public class WeatherActivity extends AppCompatActivity implements OnMapReadyCall
     private void handleIntent(Intent intent) {
         if (Intent.ACTION_SEARCH.equals(intent.getAction())) {
             String query = intent.getStringExtra(SearchManager.QUERY);
-            getCityTemperature(query);
+
+            mForecastResponse = null;
+            mCurrentWeatherResponse = null;
+
+            mCurrentCity = query;
+
+            if (mCurrentMode == MODE_5_DAY_FORECAST)
+                getCityForecast(query);
+            else
+                getCityCurrentWeather(query);
         }
     }
 
@@ -188,32 +261,89 @@ public class WeatherActivity extends AppCompatActivity implements OnMapReadyCall
         mLoader.setVisibility(View.GONE);
     }
 
-    private void getCityTemperature(String city) {
-        startLoading();
+    private void setShowCurrentWeather() {
+        mCurrentButton.setChecked(true);
+        mForecastButton.setChecked(false);
 
-        mResult.setVisibility(View.GONE);
+        if (mCurrentMode == MODE_CURRENT_WEATHER)
+            return;
 
-        ApiClient.getInstance().getWeatherForCity(city);
+        // Do we already have data for this city?
+        if (mCurrentWeatherResponse != null) {
+            TodayWeatherView view = new TodayWeatherView(this);
+
+            view.setWeatherData(mCurrentWeatherResponse);
+
+            mResult.removeAllViews();
+            mResult.addView(view);
+        } else if (mCurrentCity != null) {
+            getCityCurrentWeather(mCurrentCity);
+        }
+
+        mCurrentMode = MODE_CURRENT_WEATHER;
     }
 
-    private void getLocationTemperature(double lat, double lon) {
+    private void setShowForecastWeather() {
+        mCurrentButton.setChecked(false);
+        mForecastButton.setChecked(true);
+
+        if (mCurrentMode == MODE_5_DAY_FORECAST)
+            return;
+
+        if (mForecastResponse != null) {
+            ForecastWeatherView view = new ForecastWeatherView(this);
+
+            view.setResponseData(mForecastResponse);
+
+            mResult.removeAllViews();
+            mResult.addView(view);
+        } else if (mCurrentCity != null) {
+            getCityForecast(mCurrentCity);
+        }
+
+        mCurrentMode = MODE_5_DAY_FORECAST;
+    }
+
+    private void getCityCurrentWeather(String city) {
         startLoading();
+        mShare.setVisibility(View.GONE);
+        ApiClient.getInstance().getCurrentWeatherForCity(city);
+    }
 
-        mResult.setVisibility(View.GONE);
+    private void getCityForecast(String city) {
+        startLoading();
+        mShare.setVisibility(View.GONE);
+        ApiClient.getInstance().getForecastForCity(city);
+    }
 
-        ApiClient.getInstance().getWeatherForLocation(lat, lon);
+    private void getLocationCurrentWeather(double lat, double lon) {
+        startLoading();
+        mShare.setVisibility(View.GONE);
+        ApiClient.getInstance().getCurrentWeatherForLocation(lat, lon);
+    }
+
+    private void getLocationForecast(double lat, double lon) {
+        startLoading();
+        mShare.setVisibility(View.GONE);
+        ApiClient.getInstance().getForecastForLocation(lat, lon);
     }
 
     private void shareCityTemperature() {
+        ApiResponse response = (MODE_5_DAY_FORECAST == mCurrentMode) ? (mForecastResponse) : (mCurrentWeatherResponse);
+
         BranchUniversalObject obj = new BranchUniversalObject()
-                .addContentMetadata(SHARE_CITY_TODAY_LAT, "" + mResponse.getLatitude())
-                .addContentMetadata(SHARE_CITY_TODAY_LON, "" + mResponse.getLongitude());
+                .setTitle(response.getCityName())
+                .setContentDescription(getResources().getString(R.string.share_body, mCurrentCity))
+                .setContentImageUrl(mCurrentWeatherResponse.getWeatherIconUrl())
+                .addContentMetadata(SHARE_CITY_TODAY_LAT, "" + response.getLatitude())
+                .addContentMetadata(SHARE_CITY_TODAY_LON, "" + response.getLongitude())
+                .addContentMetadata(SHARE_CITY_MODE, "" + mCurrentMode);
 
         LinkProperties linkProperties = new LinkProperties()
                 .setChannel("app")
                 .setFeature("sharing");
 
-        ShareSheetStyle style = new ShareSheetStyle(this, getResources().getString(R.string.share_title), getResources().getString(R.string.share_body, mResponse.getName()));
+        ShareSheetStyle style = new ShareSheetStyle(this, getResources().getString(R.string.share_title), getResources().getString(R.string.share_body, mCurrentCity));
 
         startLoading();
 
@@ -242,24 +372,54 @@ public class WeatherActivity extends AppCompatActivity implements OnMapReadyCall
 
     @Subscribe
     public void onCityTemperatureEvent(CityWeatherEvent event) {
+        // Did we (somehow) switch the mode
+        if (mCurrentMode != MODE_CURRENT_WEATHER)
+            return;
+
         stopLoading();
 
-        mResult.setVisibility(View.VISIBLE);
-
         // Clear any existing results.
-        if (mResult.getChildCount() > 1)
-            mResult.removeViewAt(0);
+        mResult.removeAllViews();
 
-        mResponse = event.getResponse();
+        mCurrentWeatherResponse = event.getResponse();
+        mCurrentCity = mCurrentWeatherResponse.getCityName();
 
         TodayWeatherView view = new TodayWeatherView(this);
 
-        view.setWeatherData(mResponse);
+        view.setWeatherData(mCurrentWeatherResponse);
 
-        mResult.addView(view, 0);
+        mResult.addView(view);
+        mShare.setVisibility(View.VISIBLE);
 
         if (mMap != null) {
-            mMyLocation = new LatLng(mResponse.getLatitude(), mResponse.getLongitude());
+            mMyLocation = new LatLng(mCurrentWeatherResponse.getLatitude(), mCurrentWeatherResponse.getLongitude());
+            mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(mMyLocation, 12));
+        }
+    }
+
+    @Subscribe
+    public void onCityForecastEvent(CityForecastEvent event) {
+        // Did we (somehow) switch the mode
+        if (mCurrentMode != MODE_5_DAY_FORECAST)
+            return;
+
+        stopLoading();
+
+        // Clear any existing results.
+        mResult.removeAllViews();
+
+        mForecastResponse = event.getForecast();
+        mCurrentCity = mForecastResponse.getCityName();
+
+        ForecastWeatherView view = new ForecastWeatherView(this);
+
+        view.setResponseData(mForecastResponse);
+
+        mResult.addView(view);
+        mShare.setVisibility(View.VISIBLE);
+
+        if (mMap != null) {
+            mMyLocation = new LatLng(mForecastResponse.getLatitude(), mForecastResponse.getLongitude());
             mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(mMyLocation, 12));
         }
     }
@@ -271,14 +431,13 @@ public class WeatherActivity extends AppCompatActivity implements OnMapReadyCall
                 .setPositiveButton(R.string.btn_ok, new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
-
+                        dialog.dismiss();
                     }
                 })
                 .create()
                 .show();
 
         mLoader.setVisibility(View.GONE);
-        mResult.setVisibility(View.GONE);
     }
 
     @Override

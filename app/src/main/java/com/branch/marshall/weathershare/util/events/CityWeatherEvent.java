@@ -1,18 +1,18 @@
 package com.branch.marshall.weathershare.util.events;
 
-import com.branch.marshall.weathershare.api.WeatherResponse;
+import com.branch.marshall.weathershare.api.CurrentWeatherResponse;
 
 /**
- * Created by marshall on 3/17/16.
+ * Event triggered when the current weather for a city has been obtained from the API.
  */
 public class CityWeatherEvent {
-    private WeatherResponse mResponse;
+    private CurrentWeatherResponse mResponse;
 
-    public CityWeatherEvent(WeatherResponse response) {
+    public CityWeatherEvent(CurrentWeatherResponse response) {
         mResponse = response;
     }
 
-    public WeatherResponse getResponse() {
+    public CurrentWeatherResponse getResponse() {
         return mResponse;
     }
 }

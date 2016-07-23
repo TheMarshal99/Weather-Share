@@ -7,31 +7,7 @@
         android:id="@+id/map"
         android:name="com.google.android.gms.maps.SupportMapFragment"
         android:layout_width="match_parent"
-        android:layout_height="250dp" />
-
-    <!--<RelativeLayout-->
-    <!--android:id="@+id/searchBar"-->
-    <!--android:layout_width="match_parent"-->
-    <!--android:layout_height="wrap_content"-->
-    <!--android:layout_below="@+id/map"-->
-    <!--android:padding="5dp">-->
-
-    <!--<Button-->
-    <!--android:id="@+id/searchButton"-->
-    <!--android:layout_width="wrap_content"-->
-    <!--android:layout_height="wrap_content"-->
-    <!--android:layout_alignParentRight="true"-->
-    <!--android:text="@string/search" />-->
-
-    <!--<EditText-->
-    <!--android:id="@+id/searchText"-->
-    <!--android:layout_width="match_parent"-->
-    <!--android:layout_height="wrap_content"-->
-    <!--android:layout_centerVertical="true"-->
-    <!--android:layout_toLeftOf="@+id/searchButton"-->
-    <!--android:hint="@string/search_hint" />-->
-
-    <!--</RelativeLayout>-->
+        android:layout_height="200dp" />
 
     <FrameLayout
         android:id="@+id/loader"
@@ -45,28 +21,54 @@
             android:layout_gravity="center" />
     </FrameLayout>
 
+    <LinearLayout
+        android:id="@+id/stateToggle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/map"
+        android:orientation="horizontal"
+        android:weightSum="2">
+
+        <ToggleButton
+            android:id="@+id/btnCurrent"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textOff="@string/option_current"
+            android:textOn="@string/option_current" />
+
+        <ToggleButton
+            android:id="@+id/btnForecast"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textOff="@string/option_forecast"
+            android:textOn="@string/option_forecast" />
+
+    </LinearLayout>
+
+    <Button
+        android:id="@+id/shareButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:layout_marginLeft="15dp"
+        android:layout_marginRight="15dp"
+        android:layout_marginTop="15dp"
+        android:text="@string/share" />
+
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_below="@+id/map">
+        android:layout_above="@+id/shareButton"
+        android:layout_below="@+id/stateToggle">
 
         <LinearLayout
             android:id="@+id/resultLayout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="15dp">
-
-            <Button
-                android:id="@+id/shareButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:layout_marginLeft="15dp"
-                android:layout_marginRight="15dp"
-                android:layout_marginTop="15dp"
-                android:text="@string/share" />
-        </LinearLayout>
+            android:padding="15dp"/>
     </ScrollView>
 
 </RelativeLayout>

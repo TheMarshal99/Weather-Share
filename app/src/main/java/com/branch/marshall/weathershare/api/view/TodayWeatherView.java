@@ -7,7 +7,7 @@ import android.widget.RelativeLayout;
 import android.widget.TextView;
 
 import com.branch.marshall.weathershare.R;
-import com.branch.marshall.weathershare.api.WeatherResponse;
+import com.branch.marshall.weathershare.api.CurrentWeatherResponse;
 import com.branch.marshall.weathershare.util.ImageUtils;
 
 /**
@@ -20,7 +20,7 @@ public class TodayWeatherView extends RelativeLayout {
     private TextView mCondition;
     private TextView mRange;
 
-    private WeatherResponse mResponse;
+    private CurrentWeatherResponse mResponse;
 
     public TodayWeatherView(Context context) {
         super(context);
@@ -47,12 +47,12 @@ public class TodayWeatherView extends RelativeLayout {
         mRange = (TextView) findViewById(R.id.tempRange);
     }
 
-    public void setWeatherData(WeatherResponse response) {
+    public void setWeatherData(CurrentWeatherResponse response) {
         mResponse = response;
 
         mWeatherImage.setImageBitmap(null);
         ImageUtils.getInstance().loadImage(mResponse.getWeatherIconUrl(), mWeatherImage);
-        mCity.setText(mResponse.getName());
+        mCity.setText(mResponse.getCityName());
         mTemp.setText(getResources().getString(R.string.temperature, mResponse.getTemperature()));
         mRange.setText(getResources().getString(R.string.temperature_range, mResponse.getHigh(), mResponse.getLow()));
         mCondition.setText(capitalizeSentence(mResponse.getConditions()));

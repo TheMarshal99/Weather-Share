@@ -6,9 +6,9 @@ import com.branch.marshall.weathershare.api.model.WeatherConditionData;
 import com.google.gson.annotations.SerializedName;
 
 /**
- * Created by marshall on 3/17/16.
+ * API response body for the Current Weather request for a City/Location.
  */
-public class WeatherResponse {
+public class CurrentWeatherResponse implements ApiResponse {
     @SerializedName("name")
     private String mName;
 
@@ -22,7 +22,7 @@ public class WeatherResponse {
     private LocationData mLocation;
 
 
-    public String getName() {
+    public String getCityName() {
         return mName;
     }
 

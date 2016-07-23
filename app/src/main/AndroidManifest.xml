@@ -30,10 +30,27 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!--<intent-filter android:autoVerify="true">-->
+            <!--<action android:name="android.intent.action.VIEW" />-->
+
+            <!--<category android:name="android.intent.category.DEFAULT" />-->
+            <!--<category android:name="android.intent.category.BROWSABLE" />-->
+
+            <!--<data-->
+            <!--android:host="bnc.lt"-->
+            <!--android:pathPrefix="/zjym"-->
+            <!--android:scheme="https" />-->
+
+            <!--<data-->
+            <!--android:host="bnc.lt"-->
+            <!--android:pathPrefix="/7jym"-->
+            <!--android:scheme="https" />-->
+            <!--</intent-filter>-->
             <intent-filter>
                 <data
                     android:host="open"
                     android:scheme="weathershare" />
+
                 <action android:name="android.intent.action.VIEW" />
 
                 <category android:name="android.intent.category.DEFAULT" />
@@ -54,8 +71,16 @@
 
         <!-- Branch Stuff -->
         <meta-data
+            android:name="io.branch.sdk.TestMode"
+            android:value="false" />
+
+        <meta-data
             android:name="io.branch.sdk.BranchKey"
             android:value="key_live_aoe5xtoR3hpWsXNjD3GAtmcoyEhvH4i9" />
+
+        <meta-data
+            android:name="io.branch.sdk.BranchKey.test"
+            android:value="key_test_oclYwykM0ni4w9LgB9Jy3gentqlsH1wp" />
 
         <receiver
             android:name="io.branch.referral.InstallListener"
